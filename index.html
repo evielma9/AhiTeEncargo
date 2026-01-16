@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AhíTeEncargo SLRC - Pedidos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { -webkit-tap-highlight-color: transparent; font-family: sans-serif; }
+        #cart-modal, #admin-modal { display: none; }
+        .product-card { transition: all 0.2s; border: 1px solid #eee; }
+        .product-card:active { transform: scale(0.96); }
+        /* Estilo para que las fotos de productos sean pequeñas (400% reducción visual) */
+        .img-producto-mini {
+            width: 60px !important;
+            height: 60px !important;
+            object-fit: contain;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 pb-24">
+
+    <header class="bg-white border-b p-2 sticky top-0 z-50 shadow-sm">
+        <div class="container mx-auto flex justify-end items-center px-4">
+            <button onclick="toggleCart()" class="relative p-3 bg-blue-600 rounded-full text-white shadow-lg">
+                <i class="fas fa-shopping-basket text-xl"></i>
+                <span id="cart-count" class="absolute -top-1 -right-1 bg-orange-500 text-[10px] font-bold rounded-full h-5 w-5 flex items-center justify-center border-2 border-white">0</span>
+            </button>
+        </div>
+    </header>
+
+    <div id="banner-envio" class="bg-orange-500 p-2 text-center text-[10px] font-black text-white uppercase tracking-wider">
+        Verificando horario...
+    </div>
+
+    <section class="flex justify-center py-6 bg-white border-b shadow-sm">
+        <div onclick="accesoAdmin()" class="cursor-pointer">
+            <img src="logo.png" alt="Logo" class="h-56 md:h-72 w-auto object-contain">
+        </div>
+    </section>
+
+    <main class="container mx-auto p-4">
+        <div id="categorias-container"></div>
+    </main>
+
+    <div id="admin-modal" class="fixed inset-0 bg-gray-900 bg-opacity-95 z-[100] p-4 overflow-y-auto">
+        <div class="bg-white rounded-3xl p-6 max-w-xl mx-auto shadow-2xl">
+            <div class="flex justify-between items-center mb-6 border-b pb-4">
+                <h2 class="text-xl font-black text-blue-600 italic">PANEL DE CONTROL</h2>
+                <button onclick="toggleAdmin()" class="text-gray-400 text-3xl">&times;</button>
+            </div>
+            <div class="space-y-4" id="admin-lista-productos"></div>
+            <button onclick="toggleAdmin()" class="w-full mt-8 bg-blue-600 text-white py-4 rounded-2xl font-bold uppercase tracking-widest">
+                Guardar y Salir
+            </button>
+        </div>
+    </div>
+
+    <div id="cart-modal" class="fixed inset-0 bg-black bg-opacity-60 z-[60] flex justify-end">
+        <div class="bg-white w-[90%] max-w-md h-full flex flex-col shadow-2xl">
+            <div class="p-4 border-b flex justify-between items-center bg-gray-50">
+                <h2 class="font-black text-lg text-gray-800 italic">MI PEDIDO</h2>
+                <button onclick="toggleCart()" class="text-3xl text-gray-400">&times;</button>
+            </div>
+            <div id="cart-items" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+            <div class="p-6 bg-white border-t space-y-3">
+                <div class="flex justify-between text-sm"><span>Subtotal:</span><span id="subtotal" class="font-bold">$0.00</span></div>
+                <div class="flex justify-between text-sm"><span id="label-envio">Envío:</span><span id="envio-costo" class="font-bold">$0.00</span></div>
+                <div class="flex justify-between text-xl font-black text-blue-600 border-t pt-2"><span>TOTAL:</span><span id="total-final">$0.00</span></div>
+                <div id="min-warning" class="hidden bg-red-50 text-red-500 text-[11px] p-2 rounded-lg text-center font-bold">⚠️ MÍNIMO $150.00</div>
+                <button onclick="enviarWhatsApp()" id="btn-checkout" class="w-full bg-green-500 text-white py-4 rounded-2xl font-black flex items-center justify-center space-x-2">
+                    <i class="fab fa-whatsapp text-2xl"></i><span>ENVIAR WHATSAPP</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let db_productos = [
+            { codigo: "P01", nombre: "Sabritas Sal Gde", precio: 65, stock: 10, cat: "PAPITAS", img: "sabritas.jpg" },
+            { codigo: "P02", nombre: "Ruffles Queso", precio: 68, stock: 5, cat: "PAPITAS", img: "ruffles.jpg" },
+            { codigo: "B01", nombre: "Coca Cola 600ml", precio: 22, stock: 24, cat: "BEBIDAS", img: "coca.jpg" },
+            { codigo: "B02", nombre: "Monster Energy", precio: 48, stock: 8, cat: "BEBIDAS", img: "monster.jpg" }
+        ];
+
+        let carrito = [];
+        let clicsLogo = 0;
+
+        function inicializarApp() {
+            const container = document.getElementById('categorias-container');
+            const categorias = [...new Set(db_productos.map(p => p.cat))];
+            
+            container.innerHTML = categorias.map(cat => {
+                const productosCat = db_productos.filter(p => p.cat === cat && p.stock > 0);
+                if(productosCat.length === 0) return '';
+
+                return `
+                    <h2 class="text-xs font-black text-blue-600 mb-4 tracking-widest uppercase flex items-center mt-6">
+                        <span class="w-4 h-1 bg-blue-600 mr-2 rounded"></span> ${cat}
+                    </h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        ${productosCat.map(p => `
+                            <div class="bg-white p-3 rounded-2xl shadow-sm border border-gray-100 flex items-center space-x-4 product-card">
+                                <img src="${p.img}" onerror="this.src='https://via.placeholder.com/150'" class="img-producto-mini rounded-lg">
+                                <div class="flex-1">
+                                    <h3 class="font-bold text-[11px] leading-tight text-gray-600 uppercase">${p.nombre}</h3>
+                                    <p class="text-gray-900 font-black text-sm">$${p.precio}</p>
+                                </div>
+                                <button onclick="agregar('${p.codigo}')" class="bg-orange-500 text-white w-10 h-10 rounded-xl flex items-center justify-center shadow-md active:bg-orange-600">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }).join('');
+            actualizarHorario();
+        }
+
+        function accesoAdmin() {
+            clicsLogo++;
+            if (clicsLogo >= 5) {
+                const pass = prompt("Introduce la clave de administrador:");
+                if (pass === "1234") toggleAdmin();
+                clicsLogo = 0;
+            }
+        }
+
+        function toggleAdmin() {
+            const m = document.getElementById('admin-modal');
+            m.style.display = (m.style.display === 'block') ? 'none' : 'block';
+            if(m.style.display === 'block') renderAdmin();
+            else inicializarApp();
+        }
+
+        function renderAdmin() {
+            const cont = document.getElementById('admin-lista-productos');
+            cont.innerHTML = db_productos.map(p => `
+                <div class="bg-gray-50 p-4 rounded-2xl border flex items-center justify-between">
+                    <div class="flex-1">
+                        <p class="font-bold text-xs text-blue-600 uppercase">${p.nombre}</p>
+                        <p class="text-[10px] text-gray-400">Stock actual: <b id="st-${p.codigo}">${p.stock}</b></p>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <button onclick="modificarStock('${p.codigo}', -1)" class="w-8 h-8 bg-red-100 text-red-600 rounded-lg font-bold">-</button>
+                        <button onclick="modificarStock('${p.codigo}', 1)" class="w-8 h-8 bg-green-100 text-green-600 rounded-lg font-bold">+</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function modificarStock(codigo, cantidad) {
+            const p = db_productos.find(x => x.codigo === codigo);
+            p.stock = Math.max(0, p.stock + cantidad);
+            document.getElementById(`st-${codigo}`).innerText = p.stock;
+        }
+
+        function actualizarHorario() {
+            const hora = new Date().getHours();
+            const esNoche = (hora >= 20 || hora < 6);
+            const banner = document.getElementById('banner-envio');
+            banner.innerText = esNoche ? '🌙 ENVÍO NOCTURNO $40 | MÍNIMO $150' : '☀️ ENVÍO DÍA $30 | MÍNIMO $150';
+            banner.style.backgroundColor = esNoche ? "#1e1b4b" : "#f97316";
+        }
+
+        function agregar(codigo) {
+            const p = db_productos.find(x => x.codigo === codigo);
+            carrito.push({...p, cartId: Date.now()});
+            actualizarCarrito();
+        }
+
+        function eliminar(cartId) {
+            carrito = carrito.filter(p => p.cartId !== cartId);
+            actualizarCarrito();
+        }
+
+        function toggleCart() {
+            const m = document.getElementById('cart-modal');
+            m.style.display = (m.style.display === 'flex') ? 'none' : 'flex';
+        }
+
+        function actualizarCarrito() {
+            document.getElementById('cart-count').innerText = carrito.length;
+            const itemsCont = document.getElementById('cart-items');
+            let subtotal = carrito.reduce((s, p) => s + p.precio, 0);
+            const esNoche = (new Date().getHours() >= 20 || new Date().getHours() < 6);
+            const envio = carrito.length > 0 ? (esNoche ? 40 : 30) : 0;
+
+            document.getElementById('subtotal').innerText = `$${subtotal.toFixed(2)}`;
+            document.getElementById('envio-costo').innerText = `$${envio.toFixed(2)}`;
+            document.getElementById('total-final').innerText = `$${(subtotal + envio).toFixed(2)}`;
+
+            const warn = document.getElementById('min-warning');
+            const btn = document.getElementById('btn-checkout');
+            if (subtotal < 150 && carrito.length > 0) {
+                warn.classList.remove('hidden');
+                btn.style.opacity = "0.5"; btn.style.pointerEvents = "none";
+            } else {
+                warn.classList.add('hidden');
+                btn.style.opacity = "1"; btn.style.pointerEvents = "auto";
+            }
+
+            itemsCont.innerHTML = carrito.map(p => `
+                <div class="flex items-center justify-between bg-gray-50 p-2 rounded-xl border">
+                    <div class="flex items-center">
+                        <img src="${p.img}" onerror="this.src='https://via.placeholder.com/50'" class="w-10 h-10 rounded-lg object-cover mr-3">
+                        <div>
+                            <p class="font-bold text-[10px] text-gray-700">${p.nombre}</p>
+                            <p class="text-blue-600 font-bold text-xs">$${p.precio}</p>
+                        </div>
+                    </div>
+                    <button onclick="eliminar(${p.cartId})" class="text-red-400 p-2"><i class="fas fa-trash-alt text-sm"></i></button>
+                </div>
+            `).join('');
+        }
+
+        function enviarWhatsApp() {
+            const telefono = "526530000000"; 
+            let texto = "🚀 *NUEVO PEDIDO: AHÍ TE ENCARGO* 🚀%0A%0A";
+            carrito.forEach(p => texto += `• ${p.nombre} - $${p.precio}%0A`);
+            const tot = document.getElementById('total-final').innerText;
+            const env = document.getElementById('envio-costo').innerText;
+            texto += `%0A🚚 *Envío:* ${env}%0A💰 *TOTAL:* ${tot}%0A%0A🏠 *DIRECCIÓN:* __________`;
+            window.open(`https://wa.me/${telefono}?text=${texto}`, '_blank');
+        }
+
+        inicializarApp();
+    </script>
+</body>
+</html>
